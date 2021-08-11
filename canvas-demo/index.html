@@ -1,12 +1,246 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Document</title>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="js/vue.js"></script>
+    <style>
+        #canvas {
+            border: 1px solid rgb(199, 198, 198);
+        }
+    </style>
 </head>
+
 <body>
-  canvas-demo
+    <div id="app">
+        <canvas id="canvas" ref="myCanvas" @mousedown="mouseDown" @mousemove="move" @dblclick="mouseDbclick"
+            @mouseup="mouseUp" style="display: block">
+        </canvas>
+        <canvas id="offcanvas" style="display: none">
+        </canvas>
+        <button @click="addArea">开始绘制</button>
+        {{position}}
+    </div>
+    <script>
+        Vue.config.productionTip = false
+        const vm = new Vue({
+            el: '#app',
+            data() {
+                return {
+                    canvas: {},
+                    context: {},
+                    drawingSurfacsImageData: '',
+                    color: ['red', 'yellow', 'blue', 'green', 'black'],
+                    position: [],
+                    editPointPosition: {
+                        i: null,
+                        j: null
+                    },
+                    type: 0, // 1新增 2编辑
+                    mousedown: {},//鼠标当前的点
+                    // rubberbandRect: {},
+                    isAreaFirstPoint: false,//判断是否是区域第一个点
+                    index: 0,
+                }
+            },
+            created() {
+                this.doDraw('./img/transport.jpg')
+            },
+            methods: {
+                addArea() {
+                    this.type = 1
+                },
+                windowToCanvas(x, y) {
+                    var bbox = this.canvas.getBoundingClientRect();
+                    return {
+                        x: x - bbox.left * (this.canvas.width / bbox.width),
+                        y: y - bbox.top * (this.canvas.height / bbox.width)
+                    };
+                },
+                //保存当前的canvas上的数据
+                saveDrawingSurface() {
+                    this.drawingSurfacsImageData = this.context.getImageData(0, 0, this.canvas.width, this.canvas.height);
+                },
+                //恢复canvas的数据，主要用来显示最新的线段，擦除原来的线段
+                restoreDrawingSurface() {
+                    this.context.putImageData(this.drawingSurfacsImageData,
+                        0, 0, 0, 0, this.canvas.width, this.canvas.height
+                    );
+                },
+                updateRubberbandCircle(loc,id) {
+                    this.context.beginPath();
+                    this.context.strokeStyle = this.color[id-1];
+                    this.context.arc(loc.x, loc.y, 3, 0, Math.PI * 2, false);
+                    this.context.stroke();
+                    this.context.fill();
+                    this.context.closePath()
+                },
+                drawRubberbandShape(loc) {
+                    this.context.beginPath();
+                    this.context.moveTo(this.mousedown.x, this.mousedown.y);
+                    this.context.lineTo(loc.x, loc.y);
+                    this.context.strokeStyle = this.color[this.index];
+                    this.context.stroke();
+                    // this.context.closePath()
+                },
+                drawId(loc, id) {
+                    this.context.font = "26px Arial bolder"
+                    this.context.fillStyle = this.color[id-1]
+                    this.context.fillText(id, loc.x, loc.y - 2)
+                },
+                mouseDown(e) {
+                    loc = this.windowToCanvas(e.clientX, e.clientY);
+                    for (let i = 0; i < this.position.length; i++) {
+                        for (let j = 0; j < this.position[i].points.length; j++) {
+                            var item = this.position[i].points[j];
+                            if (Math.abs(item.x - loc.x) <= 3 && Math.abs(item.y - loc.y) <= 3) {
+                                // this.isPointExist = true;
+                                // this.curMovePoint = item;
+                                this.editPointPosition.j = j;
+                                this.editPointPosition.i = i;
+                                // 避免点击事件冲突
+                                if (this.type != 1) {
+                                    this.type = 2
+                                }
+
+                            }
+                        }
+                    }
+                    // 是否新增
+                    if (this.type === 1) {
+                        if (!this.isAreaFirstPoint) {
+                            this.position.push({
+                                id: this.index + 1,
+                                points: [loc]
+                            })
+                            // e.preventDefault();
+                            this.saveDrawingSurface();
+                            this.mousedown.x = loc.x;
+                            this.mousedown.y = loc.y;
+                            // this.dragging = true;
+                            this.isAreaFirstPoint = true;
+                        } else {
+                            this.position[this.index].points.push(loc)
+                            console.log(this.position);
+                            this.restoreDrawingSurface();
+                            this.drawRubberbandShape(loc,this.index+1);
+                            //鼠标抬起，拖动标记设为否
+                            // dragging = false;
+                            this.saveDrawingSurface();
+                            this.mousedown.x = loc.x;
+                            this.mousedown.y = loc.y;
+                        }
+                    }
+
+                },
+                move(e) {
+                    loc = this.windowToCanvas(e.clientX, e.clientY);
+                    if (this.type === 1) {
+                        if (this.isAreaFirstPoint) {
+                            this.restoreDrawingSurface();
+                            this.drawRubberbandShape(loc);
+                        }
+                    }
+                    else if (this.type === 2) {
+                        if (JSON.stringify(this.editPointPosition) != "{}") {
+                            let i = this.editPointPosition.i
+                            let j = this.editPointPosition.j
+                            //  console.log(i);
+                            this.position[i].points.splice(j, 1, loc);
+                            this.restoreDrawingSurface();
+                            this.reDraw()
+                        }
+                    }
+                },
+                mouseUp() {
+                    if (this.type === 2) {
+                        this.reDraw()
+                        // this.isPointExist = false;
+                        this.editPointPosition = {};
+                    }
+                },
+                mouseDbclick(e) {
+                    if (this.type === 1) {
+                        this.restoreDrawingSurface();
+                        this.drawRubberbandShape(this.position[this.index].points[0]);
+                        // 去除重复点
+                        this.position[this.index].points = this.position[this.index].points.slice(0, length - 1)
+                        //画区域序号
+                        this.drawId(this.position[this.index].points[0], this.index + 1)
+                        // 画点
+                        for (let i = 0; i < this.position[this.index].points.length; i++) {
+                            this.updateRubberbandCircle(this.position[this.index].points[i])
+                        }
+                        //鼠标抬起，拖动标记设为否
+                        // this.dragging = false;
+                        // 区域绘制完成
+                        this.isAreaFirstPoint = false
+                        this.index += 1
+                        this.type = 0
+                        this.mousedown = {}
+                        // this.drawingSurfacsImageData= null
+                    }
+                },
+                reDraw() {
+                    this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                    var img = new Image()
+                    img.src = './img/transport.jpg'
+                    this.context.drawImage(img, 0, 0, this.canvas.width, this.canvas.height)
+                    // this.doDraw('./img/transport.jpg')
+                    for (let i = 0; i < this.position.length; i++) {
+                        this.context.beginPath();
+                        this.context.strokeStyle = this.color[this.position[i].id-1];
+                        for (let j = 0; j < this.position[i].points.length; j++) {
+                            // console.log(this.context.strokeStyle);
+                            this.context.moveTo(this.position[i].points[j].x, this.position[i].points[j].y);
+                            if (j == this.position[i].points.length - 1) {
+                                this.context.lineTo(this.position[i].points[0].x, this.position[i].points[0].y);
+                                this.drawId(this.position[i].points[0], this.position[i].id)
+                                this.context.stroke();
+                                for (let k = 0; k < this.position[i].points.length; k++) {
+                                    this.updateRubberbandCircle(this.position[i].points[k],this.position[i].id)
+                                }
+                            } else {
+                                this.context.lineTo(this.position[i].points[j + 1].x, this.position[i].points[j + 1].y);
+                            }
+                        }
+                        this.context.closePath();
+                    }
+                },
+                doDraw(imageUrl) {
+                    //  由于弹窗，确保已获取到
+                    var a = setInterval(() => {
+                        //  重复获取
+                        var canvas = document.getElementById("canvas")
+                        this.canvas = canvas
+                        if (!this.canvas) {
+                            return false
+                        } else {
+                            clearInterval(a)
+                            //  可以理解为一个画笔，可画路径、矩形、文字、图像
+                            var context = this.canvas.getContext('2d')
+                            this.context = context
+                            var img = new Image()
+                            img.src = imageUrl
+                            //  加载图片
+                            img.onload = function () {
+                                if (img.complete) {
+                                    //  根据图像重新设定了this.canvas的长宽
+                                    canvas.setAttribute("width", img.width)
+                                    canvas.setAttribute("height", img.height)
+                                    //  绘制图片
+                                    context.drawImage(img, 0, 0, img.width, img.height)
+                                }
+                            }
+                        }
+                    }, 1)
+                }
+            }
+        })
+    </script>
 </body>
+
 </html>
